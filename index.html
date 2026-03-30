@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rocket Thrust Gauge</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background:
+          radial-gradient(circle at 50% 18%, rgba(66, 122, 255, 0.18), transparent 26%),
+          radial-gradient(circle at 50% 82%, rgba(255, 95, 32, 0.16), transparent 24%),
+          linear-gradient(180deg, #07111d 0%, #050910 100%);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      canvas {
+        width: min(800px, calc(100vw - 32px));
+        height: auto;
+        aspect-ratio: 1 / 1;
+        display: block;
+        border-radius: 28px;
+        box-shadow:
+          0 30px 100px rgba(0, 0, 0, 0.55),
+          0 0 0 1px rgba(185, 218, 255, 0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gauge" width="800" height="800"></canvas>
+
+    <script>
+      const canvas = document.getElementById("gauge");
+      const ctx = canvas.getContext("2d");
+
+      const particles = [];
+      let thrust = 0;
+      let direction = 1;
+      let maxHold = 0;
+      let shakeTime = 0;
+      let lastTime = performance.now();
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function mixColor(a, b, t) {
+        return {
+          r: Math.round(lerp(a.r, b.r, t)),
+          g: Math.round(lerp(a.g, b.g, t)),
+          b: Math.round(lerp(a.b, b.b, t)),
+        };
+      }
+
+      function toRgb(color) {
+        return `rgb(${color.r}, ${color.g}, ${color.b})`;
+      }
+
+      function getThrustColor(level) {
+        const blue = { r: 72, g: 162, b: 255 };
+        const orange = { r: 255, g: 156, b: 44 };
+        const red = { r: 255, g: 67, b: 36 };
+
+        if (level < 0.7) {
+          const t = level / 0.7;
+          return mixColor(blue, orange, t);
+        }
+
+        const t = (level - 0.7) / 0.3;
+        return mixColor(orange, red, t);
+      }
+
+      function addParticles(level, x, y, width) {
+        const spawnCount = level >= 0.995 ? 11 : 0;
+
+        for (let i = 0; i < spawnCount; i += 1) {
+          const speed = Math.random() * 320 + 180;
+          particles.push({
+            x: x + Math.random() * width,
+            y,
+            vx: (Math.random() - 0.5) * 150,
+            vy: -(Math.random() * speed + 70),
+            life: Math.random() * 0.6 + 0.45,
+            size: Math.random() * 5 + 4,
+            alpha: 1,
+            color: "255,88,56",
+          });
+        }
+      }
+
+      function updateParticles(dt) {
+        for (let i = particles.length - 1; i >= 0; i -= 1) {
+          const p = particles[i];
+          p.life -= dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vy += 420 * dt;
+          p.alpha = clamp(p.life / 1.05, 0, 1);
+
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+          }
+        }
+      }
+
+      function drawParticles() {
+        for (const p of particles) {
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(${p.color}, ${p.alpha})`;
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = `rgba(${p.color}, 0.9)`;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      function drawBackground() {
+        const background = ctx.createLinearGradient(0, 0, 0, 800);
+        background.addColorStop(0, "#091423");
+        background.addColorStop(1, "#04070d");
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, 800, 800);
+
+        ctx.strokeStyle = "rgba(184, 215, 255, 0.08)";
+        ctx.lineWidth = 1;
+        for (let y = 80; y <= 720; y += 32) {
+          ctx.beginPath();
+          ctx.moveTo(90, y);
+          ctx.lineTo(710, y);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
+        ctx.beginPath();
+        ctx.arc(400, 140, 220, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawFrame(level) {
+        ctx.save();
+
+        const shakeAmount = shakeTime > 0 ? 7 : 0;
+        if (shakeAmount > 0) {
+          ctx.translate((Math.random() - 0.5) * shakeAmount, (Math.random() - 0.5) * shakeAmount);
+        }
+
+        const panelGradient = ctx.createLinearGradient(120, 110, 680, 690);
+        panelGradient.addColorStop(0, "rgba(15, 27, 43, 0.96)");
+        panelGradient.addColorStop(1, "rgba(8, 13, 22, 0.96)");
+
+        ctx.fillStyle = panelGradient;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, 120, 80, 560, 640, 34);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(198, 222, 255, 0.08)";
+        roundRect(ctx, 160, 120, 480, 26, 13);
+        ctx.fill();
+
+        ctx.fillStyle = "#f1f5ff";
+        ctx.font = "700 36px Segoe UI";
+        ctx.textAlign = "left";
+        ctx.fillText("ROCKET THRUST", 165, 184);
+
+        ctx.fillStyle = "rgba(185, 208, 234, 0.88)";
+        ctx.font = "600 17px Segoe UI";
+        ctx.fillText("ENGINE OUTPUT MONITOR", 166, 214);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        roundRect(ctx, 500, 132, 128, 104, 24);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+        ctx.lineWidth = 1.2;
+        roundRect(ctx, 500, 132, 128, 104, 24);
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = level >= 0.995 ? "#ff6f4e" : "rgba(240, 247, 255, 0.92)";
+        ctx.font = "700 54px Segoe UI";
+        ctx.fillText(`${Math.round(level * 100)}%`, 564, 186);
+
+        const stateLabel =
+          direction === -1 ? "COOLDOWN" : level >= 0.995 ? "MAXIMUM" : level >= 0.7 ? "THRUST" : "STANDBY";
+        ctx.fillStyle = level >= 0.995 ? "rgba(255, 120, 86, 0.95)" : "rgba(153, 179, 207, 0.9)";
+        ctx.font = "700 16px Segoe UI";
+        ctx.fillText(stateLabel, 564, 216);
+
+        const trackX = 290;
+        const trackY = 258;
+        const trackWidth = 220;
+        const trackHeight = 360;
+        const fillHeight = trackHeight * level;
+        const fillY = trackY + trackHeight - fillHeight;
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+        roundRect(ctx, trackX - 22, trackY - 22, trackWidth + 44, trackHeight + 44, 40);
+        ctx.fill();
+
+        const trackGradient = ctx.createLinearGradient(trackX, trackY, trackX + trackWidth, trackY);
+        trackGradient.addColorStop(0, "#101926");
+        trackGradient.addColorStop(1, "#0b1420");
+        ctx.fillStyle = trackGradient;
+        roundRect(ctx, trackX, trackY, trackWidth, trackHeight, 28);
+        ctx.fill();
+
+        ctx.save();
+        roundRect(ctx, trackX, trackY, trackWidth, trackHeight, 28);
+        ctx.clip();
+
+        const thrustColor = getThrustColor(level);
+        const glowAlpha = level >= 0.995 ? 1 : 0.3 + level * 0.4;
+        const fillGradient = ctx.createLinearGradient(0, fillY, 0, trackY + trackHeight);
+        fillGradient.addColorStop(0, toRgb(thrustColor));
+        fillGradient.addColorStop(1, `rgba(${Math.max(thrustColor.r - 30, 0)}, ${Math.max(thrustColor.g - 30, 0)}, ${Math.max(thrustColor.b - 16, 0)}, 1)`);
+        ctx.shadowBlur = level >= 0.995 ? 48 : 22;
+        ctx.shadowColor = `rgba(${thrustColor.r}, ${thrustColor.g}, ${thrustColor.b}, ${glowAlpha})`;
+        ctx.fillStyle = fillGradient;
+        ctx.fillRect(trackX, fillY, trackWidth, fillHeight);
+
+        if (fillHeight > 0) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+          ctx.fillRect(trackX, fillY, trackWidth, 6);
+        }
+
+        const sheen = ctx.createLinearGradient(trackX, trackY, trackX + trackWidth, trackY);
+        sheen.addColorStop(0, "rgba(255, 255, 255, 0.04)");
+        sheen.addColorStop(0.5, "rgba(255, 255, 255, 0.22)");
+        sheen.addColorStop(1, "rgba(255, 255, 255, 0.03)");
+        ctx.fillStyle = sheen;
+        ctx.fillRect(trackX + 20, fillY, 22, fillHeight);
+        ctx.restore();
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+        ctx.lineWidth = 2;
+        roundRect(ctx, trackX, trackY, trackWidth, trackHeight, 28);
+        ctx.stroke();
+
+        ctx.textAlign = "left";
+        for (let i = 0; i <= 10; i += 1) {
+          const percent = 100 - i * 10;
+          const y = trackY + i * (trackHeight / 10);
+          ctx.strokeStyle = "rgba(191, 220, 255, 0.14)";
+          ctx.beginPath();
+          ctx.moveTo(232, y);
+          ctx.lineTo(278, y);
+          ctx.stroke();
+
+          ctx.fillStyle = percent === 100 ? "#ff9f86" : "rgba(177, 201, 226, 0.84)";
+          ctx.font = "600 16px Segoe UI";
+          ctx.fillText(`${percent}`, 186, y + 5);
+        }
+
+        ctx.textAlign = "center";
+        ctx.fillStyle =
+          level >= 0.995
+            ? "rgba(255, 120, 90, 0.98)"
+            : direction === -1
+              ? "rgba(255, 188, 132, 0.98)"
+              : "rgba(183, 207, 233, 0.92)";
+        ctx.font = "700 24px Segoe UI";
+        const footerLabel =
+          level >= 0.995
+            ? "THRUST LIMIT EXCEEDED"
+            : direction === -1
+              ? "COOLDOWN SEQUENCE"
+              : level >= 0.7
+                ? "HIGH THRUST"
+                : "STABLE CLIMB";
+        ctx.fillText(footerLabel, 400, 670);
+
+        ctx.fillStyle = "rgba(137, 162, 192, 0.9)";
+        ctx.font = "500 16px Segoe UI";
+        ctx.fillText("Cycle repeats automatically after max output and cooldown", 400, 700);
+
+        drawParticles();
+        ctx.restore();
+      }
+
+      function roundRect(context, x, y, width, height, radius) {
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.lineTo(x + width - radius, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + radius);
+        context.lineTo(x + width, y + height - radius);
+        context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        context.lineTo(x + radius, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+        context.closePath();
+      }
+
+      function animate(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.033);
+        lastTime = now;
+
+        if (direction === 1) {
+          thrust += dt * 0.22;
+          if (thrust >= 1) {
+            thrust = 1;
+            direction = 0;
+            maxHold = 1.2;
+            shakeTime = 1.2;
+          }
+        } else if (direction === 0) {
+          maxHold -= dt;
+          if (maxHold <= 0) {
+            direction = -1;
+          }
+        } else {
+          thrust -= dt * 0.33;
+          if (thrust <= 0) {
+            thrust = 0;
+            direction = 1;
+          }
+        }
+
+        const barTopX = 290;
+        const barTopY = 258 + 360 - 360 * thrust;
+        if (thrust >= 0.995) {
+          addParticles(thrust, barTopX, barTopY, 220);
+        }
+
+        shakeTime = Math.max(0, shakeTime - dt);
+        updateParticles(dt);
+
+        drawBackground();
+        drawFrame(thrust);
+
+        requestAnimationFrame(animate);
+      }
+
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>
