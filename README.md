@@ -15,6 +15,8 @@ A single-file HTML canvas demo showing a sleek animated rocket thrust gauge.
 
 Open `index.html` in a browser.
 
+You can also open the demo with any simple local static server if you prefer.
+
 ## Author
 
 Created by Ives Tan Kian Hang.
